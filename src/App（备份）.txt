@@ -1,0 +1,535 @@
+import React, { useState } from "react";
+import {
+  Layout,
+  Menu,
+  Button,
+  Modal,
+  Form,
+  Input,
+  Tabs,
+  Card,
+  Switch,
+  Upload,
+  List,
+  Avatar,
+  Tag,
+  Row,
+  Col,
+  Collapse,
+  message
+} from "antd";
+import {
+  PlusOutlined,
+  UploadOutlined,
+  FolderOutlined,
+  FileImageOutlined,
+  CaretRightOutlined
+} from "@ant-design/icons";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  ResponsiveContainer
+} from "recharts";
+
+const { Header, Content, Sider } = Layout;
+const { Panel } = Collapse;
+
+// 静态数据
+const pieData = [
+  { name: "SUV", value: 40 },
+  { name: "Sedan", value: 30 },
+  { name: "Truck", value: 20 },
+  { name: "Other", value: 10 }
+];
+
+const barData = [
+  { name: "Brand A", count: 12 },
+  { name: "Brand B", count: 20 },
+  { name: "Brand C", count: 8 },
+  { name: "Brand D", count: 16 }
+];
+
+const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042"];
+
+function App() {
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [projects, setProjects] = useState([]);
+  const [currentProject, setCurrentProject] = useState(null);
+  const [currentVideoTask, setCurrentVideoTask] = useState(null);
+  const [isProjectModalVisible, setIsProjectModalVisible] = useState(false);
+  const [uploadList, setUploadList] = useState([]);
+  const [analysisActiveKey, setAnalysisActiveKey] = useState([]);
+  const [processedFiles, setProcessedFiles] = useState(new Set()); // 跟踪已处理的文件
+
+  const handleLogin = () => setLoggedIn(true);
+  
+  const showCreateProject = () => setIsProjectModalVisible(true);
+  
+  const handleCreateProject = (values) => {
+    const newProject = {
+      name: values.name,
+      id: Date.now(),
+      videoTasks: []
+    };
+    setProjects([...projects, newProject]);
+    setCurrentProject(newProject);
+    setIsProjectModalVisible(false);
+  };
+
+  // 修复上传处理函数
+  const handleUploadChange = ({ fileList }) => {
+    setUploadList(fileList);
+    
+    // 只处理新添加的文件
+    const newFiles = fileList.filter(file => 
+      !processedFiles.has(file.uid) && file.status === 'done'
+    );
+    
+    if (newFiles.length > 0 && currentProject) {
+      // 更新已处理的文件集合
+      const newProcessedFiles = new Set(processedFiles);
+      newFiles.forEach(file => newProcessedFiles.add(file.uid));
+      setProcessedFiles(newProcessedFiles);
+      
+      const newVideoTasks = newFiles.map(file => ({
+        id: file.uid,
+        name: file.name,
+        file: file,
+        location: null,
+        shareAllowed: false,
+        analysisResults: null,
+        createdAt: new Date()
+      }));
+      
+      const updatedProjects = projects.map(project => {
+        if (project.id === currentProject.id) {
+          return {
+            ...project,
+            videoTasks: [...project.videoTasks, ...newVideoTasks]
+          };
+        }
+        return project;
+      });
+      
+      setProjects(updatedProjects);
+      setCurrentProject(updatedProjects.find(p => p.id === currentProject.id));
+      
+      // 显示成功消息
+      if (newFiles.length > 0) {
+        message.success(`成功添加 ${newFiles.length} 个文件`);
+      }
+    }
+  };
+
+  const getCurrentProjectVideoTasks = () => {
+    if (!currentProject) return [];
+    return currentProject.videoTasks;
+  };
+
+  const loginTabs = [
+    {
+      key: "1",
+      label: "微信扫码",
+      children: (
+        <Button type="primary" block onClick={handleLogin}>
+          扫码登录 (演示)
+        </Button>
+      )
+    },
+    {
+      key: "2",
+      label: "手机号登录",
+      children: (
+        <Form layout="vertical" onFinish={handleLogin}>
+          <Form.Item label="手机号" name="phone">
+            <Input />
+          </Form.Item>
+          <Form.Item label="验证码" name="code">
+            <Input />
+          </Form.Item>
+          <Button type="primary" htmlType="submit" block>
+            登录 (演示)
+          </Button>
+        </Form>
+      )
+    },
+    {
+      key: "3",
+      label: "邮箱登录",
+      children: (
+        <Form layout="vertical" onFinish={handleLogin}>
+          <Form.Item label="邮箱" name="email">
+            <Input />
+          </Form.Item>
+          <Form.Item label="密码" name="password">
+            <Input.Password />
+          </Form.Item>
+          <Button type="primary" htmlType="submit" block>
+            登录 (演示)
+          </Button>
+        </Form>
+      )
+    }
+  ];
+
+  const generateMenuItems = () => {
+    return [
+      ...projects.map(project => ({
+        key: project.id,
+        icon: <FolderOutlined />,
+        label: project.name,
+        children: project.videoTasks.map(task => ({
+          key: task.id,
+          icon: <FileImageOutlined />,
+          label: task.name,
+          onClick: () => setCurrentVideoTask(task)
+        })),
+        onTitleClick: () => {
+          setCurrentProject(project);
+          setCurrentVideoTask(null);
+        }
+      })),
+      {
+        key: "new-project",
+        icon: <PlusOutlined />,
+        label: "新建项目",
+        onClick: showCreateProject
+      }
+    ];
+  };
+
+  if (!loggedIn) {
+    return (
+      <div style={{
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        minHeight: "100vh",
+        width: "100vw"
+      }}>
+        <Card title="车辆信息智能识别与数据分析平台" style={{ width: 400 }}>
+          <Tabs defaultActiveKey="1" items={loginTabs} />
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <Layout style={{ minHeight: "100vh", width: "100vw" }}>
+      <Header style={{ 
+        color: "white", 
+        fontSize: 20, 
+        padding: "0 24px",
+        position: "sticky",
+        top: 0,
+        zIndex: 1
+      }}>
+        车辆信息智能识别与数据分析平台
+      </Header>
+      <Layout style={{ flexDirection: "row", flex: 1 }}>
+        <Sider
+          width={280}
+          style={{
+            background: "#001529",
+            overflow: "auto",
+            height: "calc(100vh - 64px)"
+          }}
+        >
+          <Menu
+            mode="inline"
+            selectedKeys={[
+              currentProject?.id?.toString(),
+              currentVideoTask?.id?.toString()
+            ]}
+            defaultOpenKeys={currentProject ? [currentProject.id.toString()] : []}
+            style={{ height: "100%", borderRight: 0 }}
+            items={generateMenuItems()}
+          />
+        </Sider>
+
+        <Content style={{ 
+          padding: 24, 
+          background: "#fff", 
+          overflow: "auto",
+          flex: 1,
+          height: "calc(100vh - 64px)",
+          minWidth: 0
+        }}>
+          {!currentProject && (
+            <div style={{ 
+              display: "flex", 
+              justifyContent: "center", 
+              alignItems: "center", 
+              height: "100%"
+            }}>
+              <div style={{ textAlign: "center" }}>
+                <p>请选择或创建一个项目</p>
+                <Button type="primary" onClick={showCreateProject}>
+                  创建新项目
+                </Button>
+              </div>
+            </div>
+          )}
+          
+          {currentProject && !currentVideoTask && (
+            <div style={{ width: "100%" }}>
+              <Card title={`项目: ${currentProject.name}`} style={{ marginBottom: 24 }}>
+                <Upload
+                  fileList={uploadList}
+                  onChange={handleUploadChange}
+                  beforeUpload={() => false}
+                  multiple
+                  listType="picture"
+                  style={{ marginBottom: 24 }}
+                >
+                  <Button icon={<UploadOutlined />}>上传视频/影像</Button>
+                </Upload>
+                
+                <Card title="视频任务列表" style={{ marginTop: 16 }}>
+                  {getCurrentProjectVideoTasks().length > 0 ? (
+                    <List
+                      itemLayout="horizontal"
+                      dataSource={getCurrentProjectVideoTasks()}
+                      renderItem={(task) => (
+                        <List.Item
+                          actions={[
+                            <Button 
+                              type="link" 
+                              onClick={() => setCurrentVideoTask(task)}
+                            >
+                              查看详情
+                            </Button>
+                          ]}
+                        >
+                          <List.Item.Meta
+                            avatar={<Avatar icon={<FileImageOutlined />} />}
+                            title={task.name}
+                            description={`上传于: ${task.createdAt.toLocaleString()}`}
+                          />
+                          <div>
+                            {task.analysisResults ? (
+                              <Tag color="green">已分析</Tag>
+                            ) : (
+                              <Tag color="blue">待分析</Tag>
+                            )}
+                          </div>
+                        </List.Item>
+                      )}
+                    />
+                  ) : (
+                    <div style={{ textAlign: "center", padding: 20 }}>
+                      <p>暂无视频任务</p>
+                      <p>请上传视频/影像文件</p>
+                    </div>
+                  )}
+                </Card>
+              </Card>
+            </div>
+          )}
+          
+          {currentProject && currentVideoTask && (
+            <div style={{ width: "100%" }}>
+              <div style={{ marginBottom: 16 }}>
+                <Button 
+                  type="link" 
+                  onClick={() => setCurrentVideoTask(null)}
+                  style={{ padding: 0, marginBottom: 8 }}
+                >
+                  &larr; 返回项目
+                </Button>
+                <h2>
+                  {currentProject.name} / {currentVideoTask.name}
+                </h2>
+              </div>
+              
+              <div style={{ width: "100%" }}>
+                <Card style={{ marginBottom: 24, width: "100%" }}>
+                  <Form layout="vertical">
+                    <Form.Item label="地理信息">
+                      <Input 
+                        placeholder="输入或选择地理信息" 
+                        value={currentVideoTask.location || ''}
+                        onChange={(e) => {
+                          const updatedProjects = projects.map(project => {
+                            if (project.id === currentProject.id) {
+                              const updatedTasks = project.videoTasks.map(task => {
+                                if (task.id === currentVideoTask.id) {
+                                  return { ...task, location: e.target.value };
+                                }
+                                return task;
+                              });
+                              return { ...project, videoTasks: updatedTasks };
+                            }
+                            return project;
+                          });
+                          setProjects(updatedProjects);
+                          setCurrentVideoTask({
+                            ...currentVideoTask,
+                            location: e.target.value
+                          });
+                        }}
+                      />
+                    </Form.Item>
+                  </Form>
+                  
+                  <Card title="识别参数" style={{ marginTop: 16 }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
+                      <Switch checkedChildren="车牌号码" unCheckedChildren="车牌号码" defaultChecked />
+                      <Switch checkedChildren="车辆品牌" unCheckedChildren="车辆品牌" defaultChecked />
+                      <Switch checkedChildren="车辆类型" unCheckedChildren="车辆类型" defaultChecked />
+                    </div>
+                  </Card>
+                  
+                  <Button 
+                    type="primary" 
+                    style={{ marginTop: 16 }}
+                    onClick={() => {
+                      // 模拟分析过程
+                      const updatedProjects = projects.map(project => {
+                        if (project.id === currentProject.id) {
+                          const updatedTasks = project.videoTasks.map(task => {
+                            if (task.id === currentVideoTask.id) {
+                              return { 
+                                ...task, 
+                                analysisResults: {
+                                  pieData: [...pieData],
+                                  barData: [...barData]
+                                }
+                              };
+                            }
+                            return task;
+                          });
+                          return { ...project, videoTasks: updatedTasks };
+                        }
+                        return project;
+                      });
+                      setProjects(updatedProjects);
+                      setCurrentVideoTask({
+                        ...currentVideoTask,
+                        analysisResults: {
+                          pieData: [...pieData],
+                          barData: [...barData]
+                        }
+                      });
+                      // 分析完成后展开结果面板
+                      setAnalysisActiveKey(['1']);
+                    }}
+                  >
+                    开始分析
+                  </Button>
+
+                  {/* 分析结果部分 - 可折叠 */}
+                  {currentVideoTask.analysisResults && (
+                    <div style={{ marginTop: 24 }}>
+                      <Collapse 
+                        activeKey={analysisActiveKey}
+                        onChange={(key) => setAnalysisActiveKey(key)}
+                        expandIcon={({ isActive }) => <CaretRightOutlined rotate={isActive ? 90 : 0} />}
+                      >
+                        <Panel header="分析结果与数据共享设置" key="1">
+                          <div style={{ marginBottom: 16 }}>
+                            <Form.Item label="授权共享">
+                              <Switch 
+                                checked={currentVideoTask.shareAllowed || false}
+                                onChange={(checked) => {
+                                  const updatedProjects = projects.map(project => {
+                                    if (project.id === currentProject.id) {
+                                      const updatedTasks = project.videoTasks.map(task => {
+                                        if (task.id === currentVideoTask.id) {
+                                          return { ...task, shareAllowed: checked };
+                                        }
+                                        return task;
+                                      });
+                                      return { ...project, videoTasks: updatedTasks };
+                                    }
+                                    return project;
+                                  });
+                                  setProjects(updatedProjects);
+                                  setCurrentVideoTask({
+                                    ...currentVideoTask,
+                                    shareAllowed: checked
+                                  });
+                                }}
+                              />
+                            </Form.Item>
+                          </div>
+
+                          <div style={{ width: "100%", height: 400, marginBottom: 24 }}>
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie
+                                  data={currentVideoTask.analysisResults.pieData}
+                                  dataKey="value"
+                                  nameKey="name"
+                                  cx="50%"
+                                  cy="50%"
+                                  outerRadius={100}
+                                  label
+                                >
+                                  {currentVideoTask.analysisResults.pieData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                  ))}
+                                </Pie>
+                                <Tooltip />
+                                <Legend />
+                              </PieChart>
+                            </ResponsiveContainer>
+                          </div>
+
+                          <div style={{ width: "100%", height: 400, marginBottom: 24 }}>
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={currentVideoTask.analysisResults.barData}>
+                                <XAxis dataKey="name" />
+                                <YAxis />
+                                <Tooltip />
+                                <Legend />
+                                <Bar dataKey="count" fill="#82ca9d" />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+
+                          <Button type="primary" style={{ marginTop: 16 }}>
+                            导出结果 (演示)
+                          </Button>
+                        </Panel>
+                      </Collapse>
+                    </div>
+                  )}
+                </Card>
+              </div>
+            </div>
+          )}
+        </Content>
+      </Layout>
+
+      <Modal
+        title="创建新项目"
+        open={isProjectModalVisible}
+        onCancel={() => setIsProjectModalVisible(false)}
+        footer={null}
+      >
+        <Form layout="vertical" onFinish={handleCreateProject}>
+          <Form.Item
+            label="项目名称"
+            name="name"
+            rules={[{ required: true, message: "请输入项目名称" }]}
+          >
+            <Input />
+          </Form.Item>
+          <Button type="primary" htmlType="submit" block>
+            创建
+          </Button>
+        </Form>
+      </Modal>
+    </Layout>
+  );
+}
+
+export default App;
