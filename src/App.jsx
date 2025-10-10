@@ -15,6 +15,7 @@ import {
   Tag,
   Collapse,
   message,
+  Alert,
 } from "antd";
 import {
   PlusOutlined,
@@ -44,6 +45,8 @@ const { Panel } = Collapse;
 
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042"];
 
+const API_BASE_URL = "https://ragpp-vehicle-detection-backend.hf.space";
+
 function App() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [projects, setProjects] = useState([]);
@@ -64,6 +67,7 @@ function App() {
     vehicleColor: false,
     newEnergy: false,
   });
+  const [analyzing, setAnalyzing] = useState(false);
 
   const mapRef = useRef(null);
   const markerRef = useRef(null);
@@ -204,6 +208,94 @@ function App() {
         });
       })
       .catch((err) => console.error(err));
+  };
+
+
+  const handleAnalyzeVideo = async () => {
+    if (!currentVideoTask?.file) {
+      message.error("请先选择视频文件");
+      return;
+    }
+
+    setAnalyzing(true);
+  
+    try {
+      message.loading("正在分析视频中，这可能需要一些时间...", 0);
+    
+      const formData = new FormData();
+      formData.append("video", currentVideoTask.file);
+
+      const response = await fetch(`${API_BASE_URL}/analyze`, {
+        method: "POST",
+        body: formData,
+      });
+
+      message.destroy();
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`分析失败: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+    
+      // 更新项目数据
+      const updatedProjects = projects.map((project) => {
+        if (project.id === currentProject.id) {
+          const updatedTasks = project.videoTasks.map((task) => {
+            if (task.id === currentVideoTask.id) {
+              return {
+                ...task,
+                analysisResults: {
+                  vehicleCount: result.vehicle_count,
+                  framesChecked: result.frames_checked,
+                  pieData: [
+                    { name: "车辆", value: result.vehicle_count },
+                    { name: "其他", value: Math.max(1, result.frames_checked - result.vehicle_count) }
+                  ],
+                  barData: [{ name: "车辆数量", count: result.vehicle_count }],
+                  plateColorData: demoPlateColorData,
+                  newEnergyData: demoNewEnergyData,
+                  vehicleModelData: demoVehicleModelData,
+                  params: { ...analysisParams }
+                }
+              };
+            }
+            return task;
+          });
+          return { ...project, videoTasks: updatedTasks };
+        }
+        return project;
+      });
+
+      setProjects(updatedProjects);
+      setCurrentVideoTask({
+        ...currentVideoTask,
+        analysisResults: {
+          vehicleCount: result.vehicle_count,
+          framesChecked: result.frames_checked,
+          pieData: [
+            { name: "车辆", value: result.vehicle_count },
+            { name: "其他", value: Math.max(1, result.frames_checked - result.vehicle_count) }
+          ],
+          barData: [{ name: "车辆数量", count: result.vehicle_count }],
+          plateColorData: demoPlateColorData,
+          newEnergyData: demoNewEnergyData,
+          vehicleModelData: demoVehicleModelData,
+          params: { ...analysisParams }
+        }
+      });
+    
+      setAnalysisActiveKey(['1']);
+      message.success(`分析完成！在 ${result.frames_checked} 帧中检测到 ${result.vehicle_count} 辆车辆`);
+
+    } catch (error) {
+      message.destroy();
+      console.error("分析错误:", error);
+      message.error(`分析失败: ${error.message}`);
+    } finally {
+      setAnalyzing(false);
+    }
   };
 
   const loginTabs = [
@@ -432,43 +524,15 @@ function App() {
                 </div>
               </Card>
 
-              <Button type="primary" style={{ marginTop: 16 }} onClick={() => {
-                const updatedProjects = projects.map(project => {
-                  if (project.id === currentProject.id) {
-                    const updatedTasks = project.videoTasks.map(task => {
-                      if (task.id === currentVideoTask.id) {
-                        return {
-                          ...task,
-                          analysisResults: {
-                            pieData: [...demoPieData],
-                            barData: [...demoBarData],
-                            plateColorData: [...demoPlateColorData],
-                            newEnergyData: [...demoNewEnergyData],
-                            vehicleModelData: [...demoVehicleModelData],
-                            params: { ...analysisParams }
-                          }
-                        };
-                      }
-                      return task;
-                    });
-                    return { ...project, videoTasks: updatedTasks };
-                  }
-                  return project;
-                });
-                setProjects(updatedProjects);
-                setCurrentVideoTask({
-                  ...currentVideoTask,
-                  analysisResults: {
-                    pieData: [...demoPieData],
-                    barData: [...demoBarData],
-                    plateColorData: [...demoPlateColorData],
-                    newEnergyData: [...demoNewEnergyData],
-                    vehicleModelData: [...demoVehicleModelData],
-                    params: { ...analysisParams }
-                  }
-                });
-                setAnalysisActiveKey(['1']);
-              }}>开始分析</Button>
+              <Button 
+                type="primary" 
+  		style={{ marginTop: 16 }} 
+  		onClick={handleAnalyzeVideo}
+  		loading={analyzing}
+  		disabled={analyzing}
+	      >
+  		{analyzing ? "分析中..." : "开始分析"}
+	      </Button>
 
               {currentVideoTask.analysisResults && (
                 <Card title="演示统计图表" style={{ marginTop: 24 }}>
@@ -514,6 +578,33 @@ function App() {
                         </tbody>
                       </table>
 
+		      {/* 显示真实检测结果 */}
+		  <div style={{ marginBottom: 24, padding: 16, background: '#f5f5f5', borderRadius: 8 }}>
+  		<h4>📊 检测统计</h4>
+  		  <p><strong>检测帧数:</strong> {currentVideoTask.analysisResults.framesChecked}</p>
+  		  <p><strong>检测到车辆数:</strong> {currentVideoTask.analysisResults.vehicleCount}</p>
+		</div>
+
+		      {/* 车辆数量图表 */}
+		<h4>车辆检测统计</h4>
+		<ResponsiveContainer width="100%" height={300}>
+  		<BarChart data={[{ name: '检测车辆', count: currentVideoTask.analysisResults.vehicleCount }]}>
+    		  <XAxis dataKey="name" />
+    		  <YAxis />
+    		  <Tooltip />
+    		  <Bar dataKey="count" fill="#1890ff" />
+  		</BarChart>
+		</ResponsiveContainer>
+
+		      {/* 其他模拟图表可以保留，但标注为示例 */}
+		<div style={{ marginTop: 32 }}>
+  		<Alert 
+    		message="以下为示例数据" 
+    		description="车辆品牌、颜色等详细分析功能正在开发中" 
+    		type="info" 
+    		showIcon 
+ 		/>
+		</div>
                       {/* 图表和对应表格 */}
                       {[
                         { title: "车辆类型分布", data: currentVideoTask.analysisResults.pieData, type: "pie" },
