@@ -49,6 +49,7 @@ const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042"];
 const API_BASE_URL = "https://ragpp-vehicle-detection-backend.hf.space";
 
 function App() {
+  const [showRegister, setShowRegister] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
   const [projects, setProjects] = useState([]);
   const [currentProject, setCurrentProject] = useState(null);
@@ -75,6 +76,55 @@ function App() {
 
   const handleLogin = () => setLoggedIn(true);
   const showCreateProject = () => setIsProjectModalVisible(true);
+  const handleRegister = async (values) => {
+  try {
+    const formData = new FormData();
+    if (values.email) formData.append("email", values.email);
+    if (values.phone) formData.append("phone", values.phone);
+    formData.append("password", values.password);
+
+    const res = await fetch(`${API_BASE_URL}/register`, {
+      method: "POST",
+      body: formData
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.detail || "注册失败");
+    message.success("注册成功，请登录");
+    setShowRegister(false);
+  } catch (err) {
+    message.error(err.message);
+  }
+};
+
+// 处理邮箱/手机号+密码登录
+const handleEmailLogin = async (values) => {
+  try {
+    const formData = new FormData();
+    formData.append("identifier", values.identifier);
+    formData.append("password", values.password);
+
+    const res = await fetch(`${API_BASE_URL}/login`, {
+      method: "POST",
+      body: formData,
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.detail || "登录失败");
+    message.success("登录成功");
+
+    // 保存 token 到 localStorage
+    localStorage.setItem("token", data.access_token);
+
+    // 更新登录状态
+    setLoggedIn(true);
+  } catch (err) {
+    message.error(err.message);
+  }
+};
+
 
   const handleCreateProject = (values) => {
     const newProject = { name: values.name, id: Date.now(), videoTasks: [] };
@@ -378,16 +428,24 @@ const handleSearchPlace = () => {
       ),
     },
     {
-      key: "3",
-      label: "邮箱登录",
-      children: (
-        <Form layout="vertical" onFinish={handleLogin}>
-          <Form.Item label="邮箱" name="email"><Input /></Form.Item>
-          <Form.Item label="密码" name="password"><Input.Password /></Form.Item>
-          <Button type="primary" htmlType="submit" block>登录 (演示)</Button>
-        </Form>
-      ),
-    },
+  key: "3",
+  label: "邮箱登录",
+  children: (
+    <Form layout="vertical" onFinish={handleEmailLogin}>
+      <Form.Item label="邮箱或手机号" name="identifier" rules={[{ required: true }]}>
+        <Input />
+      </Form.Item>
+      <Form.Item label="密码" name="password" rules={[{ required: true }]}>
+        <Input.Password />
+      </Form.Item>
+      <div style={{ display: "flex", gap: 8 }}>
+        <Button type="primary" htmlType="submit" block>登录</Button>
+        <Button onClick={() => setShowRegister(true)} block>注册</Button>
+      </div>
+    </Form>
+  )
+}
+
   ];
 
   const generateMenuItems = () => [
@@ -407,14 +465,50 @@ const handleSearchPlace = () => {
   ];
 
   if (!loggedIn) {
-    return (
-      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh", width: "100vw" }}>
-        <Card title="车辆信息智能识别与数据分析平台" style={{ width: 400 }}>
-          <Tabs defaultActiveKey="1" items={loginTabs} />
-        </Card>
-      </div>
-    );
-  }
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        minHeight: "100vh",
+        width: "100vw",
+      }}
+    >
+      <Card title="车辆信息智能识别与数据分析平台" style={{ width: 400 }}>
+        <Tabs defaultActiveKey="1" items={loginTabs} />
+      </Card>
+
+      {/* ✅ 注册表单弹窗放在这里 */}
+      <Modal
+        title="注册新账户"
+        open={showRegister}
+        footer={null}
+        onCancel={() => setShowRegister(false)}
+      >
+        <Form layout="vertical" onFinish={handleRegister}>
+          <Form.Item label="邮箱" name="email">
+            <Input placeholder="可选，邮箱或手机号至少填一项" />
+          </Form.Item>
+          <Form.Item label="手机号" name="phone">
+            <Input />
+          </Form.Item>
+          <Form.Item
+            label="密码"
+            name="password"
+            rules={[{ required: true, message: "请输入密码" }]}
+          >
+            <Input.Password />
+          </Form.Item>
+          <Button type="primary" htmlType="submit" block>
+            注册
+          </Button>
+        </Form>
+      </Modal>
+    </div>
+  );
+}
+
 
   // ------------------ 演示统计数据 ------------------
   const demoPieData = [
