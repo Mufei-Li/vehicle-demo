@@ -74,7 +74,42 @@ function App() {
   const mapRef = useRef(null);
   const markerRef = useRef(null);
 
-  const handleLogin = () => setLoggedIn(true);
+  const handleLogin = async (values, loginType) => {
+  try {
+    let formData = new FormData();
+    
+    if (loginType === 'email') {
+      formData.append('identifier', values.email);
+      formData.append('password', values.password);
+    } else if (loginType === 'phone') {
+      formData.append('identifier', values.phone);
+      formData.append('password', values.password);
+    }
+
+    const response = await fetch(`${API_BASE_URL}/login`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || '登录失败');
+    }
+
+    const result = await response.json();
+    
+    // 保存 token 到 localStorage
+    localStorage.setItem('access_token', result.access_token);
+    setLoggedIn(true);
+    message.success('登录成功！');
+    
+  } catch (error) {
+    console.error('登录错误:', error);
+    message.error(error.message);
+  }
+};
+
+
   const showCreateProject = () => setIsProjectModalVisible(true);
   const handleRegister = async (values) => {
   try {
