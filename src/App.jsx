@@ -24,6 +24,7 @@ import {
   FileImageOutlined,
   CaretRightOutlined,
   SearchOutlined,
+  AimOutlined,
 } from "@ant-design/icons";
 import {
   PieChart,
@@ -143,72 +144,133 @@ function App() {
     readVideoGPS();
   }, [currentVideoTask?.file]);
 
-  useEffect(() => {
-    if (!currentVideoTask || mapRef.current) return;
-    AMapLoader.load({
-      key: "46046dbf9deeb823d973ca202a961710",
-      version: "2.0",
-      plugins: ["AMap.Marker", "AMap.ToolBar", "AMap.PlaceSearch"],
-    }).then((AMap) => {
-      mapRef.current = new AMap.Map("amap-container", {
-        viewMode: "2D",
-        zoom: 12,
-        center: [116.397428, 39.90923],
-      });
-      mapRef.current.on("click", (e) => {
-        const latlng = { lat: e.lnglat.getLat(), lng: e.lnglat.getLng() };
-        if (!markerRef.current) {
-          markerRef.current = new AMap.Marker({
-            position: [latlng.lng, latlng.lat],
-          });
-          mapRef.current.add(markerRef.current);
-        } else {
-          markerRef.current.setPosition([latlng.lng, latlng.lat]);
-        }
-        updateTaskLocation(latlng);
-        message.success("已手动标注位置");
-      });
-    });
-  }, [currentVideoTask]);
+  // 初始化地图
+useEffect(() => {
+  if (!currentVideoTask) return;
 
-  const updateTaskLocation = (latlng) => {
-    const updatedProjects = projects.map((project) => {
-      if (project.id === currentProject.id) {
-        const updatedTasks = project.videoTasks.map((task) => {
-          if (task.id === currentVideoTask.id) return { ...task, location: latlng };
-          return task;
-        });
-        return { ...project, videoTasks: updatedTasks };
+  AMapLoader.load({
+    key: "48ccf7eb8007514617c7977323a00f5f",
+    version: "2.0",
+    plugins: ["AMap.Marker", "AMap.ToolBar", "AMap.PlaceSearch"],
+  }).then((AMap) => {
+    // 如果已有地图实例，先销毁旧的
+    if (mapRef.current) {
+      try {
+    	mapRef.current.destroy();
+      } catch (e) {
+    	console.warn("地图销毁异常", e);
       }
-      return project;
-    });
-    setProjects(updatedProjects);
-    setCurrentVideoTask({ ...currentVideoTask, location: latlng });
-    if (markerRef.current) markerRef.current.setPosition([latlng.lng, latlng.lat]);
-  };
+      mapRef.current = null;
+    }
 
-  const handleSearchPlace = () => {
-    if (!searchValue || !mapRef.current) return;
-    AMapLoader.load({
-      key: "46046dbf9deeb823d973ca202a961710",
-      version: "2.0",
-      plugins: ["AMap.PlaceSearch"],
+    const center = currentVideoTask.location
+      ? [currentVideoTask.location.lng, currentVideoTask.location.lat]
+      : [116.397428, 39.90923];
+
+    // 初始化新地图
+    mapRef.current = new AMap.Map("amap-container", {
+      viewMode: "2D",
+      zoom: 12,
+      center,
+    });
+
+    // 添加标记
+    markerRef.current = new AMap.Marker({
+      position: center,
+      map: mapRef.current,
+    });
+
+    // 点击地图更新位置
+    mapRef.current.on("click", (e) => {
+      const latlng = { lat: e.lnglat.getLat(), lng: e.lnglat.getLng() };
+      updateTaskLocation(latlng);
+      message.success("已手动标注位置");
+    });
+  }).catch((err) => console.error("地图加载失败:", err));
+}, [currentVideoTask]); // 每次切换视频任务重新加载地图
+
+// 更新任务地理位置
+const updateTaskLocation = (latlng) => {
+  const updatedProjects = projects.map((project) => {
+    if (project.id === currentProject.id) {
+      const updatedTasks = project.videoTasks.map((task) => {
+        if (task.id === currentVideoTask.id) return { ...task, location: latlng };
+        return task;
+      });
+      return { ...project, videoTasks: updatedTasks };
+    }
+    return project;
+  });
+  setProjects(updatedProjects);
+  setCurrentVideoTask({ ...currentVideoTask, location: latlng });
+
+  if (mapRef.current) {
+    // 记住当前缩放级别
+    const currentZoom = mapRef.current.getZoom();
+
+    // 若已有标记则移动，否则新建
+    if (markerRef.current) {
+      markerRef.current.setPosition([latlng.lng, latlng.lat]);
+    } else {
+      markerRef.current = new window.AMap.Marker({
+        position: [latlng.lng, latlng.lat],
+        map: mapRef.current,
+      });
+    }
+
+    // 临时禁用事件监听，防止重复触发
+    const map = mapRef.current;
+    const handleMoveEnd = () => {
+      map.setZoom(currentZoom);
+      map.off("moveend", handleMoveEnd); // 一次性事件
+    };
+
+    // 移动中心，并在移动完成后恢复缩放
+    map.on("moveend", handleMoveEnd);
+    map.setCenter([latlng.lng, latlng.lat]);
+  }
+};
+
+  // 搜索地点
+const handleSearchPlace = () => {
+  console.log("🔍 handleSearchPlace triggered, value =", searchValue);
+  if (!searchValue || !mapRef.current) {
+    message.warning("请输入要搜索的地点名称");
+    return;
+  }
+  if (!searchValue || !mapRef.current) {
+    message.warning("请输入要搜索的地点名称");
+    return;
+  }
+
+  AMapLoader.load({
+    key: "46046dbf9deeb823d973ca202a961710",
+    version: "2.0",
+    plugins: ["AMap.PlaceSearch"],
+  })
+    .then((AMap) => {
+      const placeSearch = new AMap.PlaceSearch({
+        map: mapRef.current,
+        city: "全国",
+      });
+
+      placeSearch.search(searchValue, (status, result) => {
+  console.log("🔍 搜索状态:", status);
+  console.log("🔍 搜索结果:", result);
+
+  if (status === "complete" && result?.poiList?.pois?.length > 0) {
+    const poi = result.poiList.pois[0];
+    console.log("✅ 找到地点:", poi.name, poi.location);
+    const latlng = { lat: poi.location.lat, lng: poi.location.lng };
+    updateTaskLocation(latlng);
+    message.success(`标记移动到: ${poi.name}`);
+  } else {
+    message.warning("未找到匹配地点");
+  }
+});
     })
-      .then((AMap) => {
-        const placeSearch = new AMap.PlaceSearch({ pageSize: 5, pageIndex: 1, city: "全国" });
-        placeSearch.search(searchValue, (status, result) => {
-          if (status === "complete" && result.poiList.pois.length > 0) {
-            const poi = result.poiList.pois[0];
-            const latlng = { lat: poi.location.lat, lng: poi.location.lng };
-            updateTaskLocation(latlng);
-            message.success(`标记移动到: ${poi.name}`);
-          } else {
-            message.warning("未找到匹配地点");
-          }
-        });
-      })
-      .catch((err) => console.error(err));
-  };
+    .catch((err) => console.error("搜索地点失败:", err));
+};
 
 
   const handleAnalyzeVideo = async () => {
@@ -473,32 +535,45 @@ function App() {
 
               <Card title="地理信息" style={{ marginBottom: 24, width: "100%", position: "relative" }}>
                 <div style={{ display: "flex", gap: 16, marginBottom: 8 }}>
-                  <Input
-                    addonBefore="纬度"
-                    value={currentVideoTask.location?.lat || ""}
-                    onChange={(e) => updateTaskLocation({ lat: parseFloat(e.target.value) || 0, lng: currentVideoTask.location?.lng || 0 })}
-                  />
-                  <Input
-                    addonBefore="经度"
-                    value={currentVideoTask.location?.lng || ""}
-                    onChange={(e) => updateTaskLocation({ lat: currentVideoTask.location?.lat || 0, lng: parseFloat(e.target.value) || 0 })}
-                  />
-                  <Input
-                    placeholder="搜索地点"
-                    value={searchValue}
-                    onChange={(e) => setSearchValue(e.target.value)}
-                    suffix={<SearchOutlined onClick={handleSearchPlace} style={{ cursor: "pointer" }} />}
-                  />
-                  <Button
-                    type="primary"
-                    icon={<SearchOutlined />}
-                    onClick={() => {
-                      if (markerRef.current && mapRef.current) {
-                        mapRef.current.setCenter(markerRef.current.getPosition());
-                      }
-                    }}
-                  />
-                </div>
+  <Input
+    addonBefore="纬度"
+    value={currentVideoTask.location?.lat || ""}
+    onChange={(e) =>
+      updateTaskLocation({
+        lat: parseFloat(e.target.value) || 0,
+        lng: currentVideoTask.location?.lng || 0,
+      })
+    }
+  />
+  <Input
+    addonBefore="经度"
+    value={currentVideoTask.location?.lng || ""}
+    onChange={(e) =>
+      updateTaskLocation({
+        lat: currentVideoTask.location?.lat || 0,
+        lng: parseFloat(e.target.value) || 0,
+      })
+    }
+  />
+  <Input
+    placeholder="搜索地点"
+    value={searchValue}
+    onChange={(e) => setSearchValue(e.target.value)}
+  />
+  <Button type="primary" onClick={handleSearchPlace}>
+    搜索
+  </Button>
+  <Button
+    icon={<AimOutlined />}   // 准星样式
+    onClick={() => {
+      if (markerRef.current && mapRef.current) {
+        const pos = markerRef.current.getPosition();
+        mapRef.current.setCenter(pos);
+        message.info("地图已居中到标记位置");
+      }
+    }}
+  />
+</div>
                 <div id="amap-container" style={{ height: 300, border: "1px solid #ddd", borderRadius: 8 }} />
               </Card>
 
