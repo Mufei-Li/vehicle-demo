@@ -16,7 +16,8 @@ import {
   Collapse,
   message,
   Alert,
-} from "antd";
+} 
+from "antd";
 import {
   PlusOutlined,
   UploadOutlined,
@@ -25,7 +26,8 @@ import {
   CaretRightOutlined,
   SearchOutlined,
   AimOutlined,
-} from "@ant-design/icons";
+} 
+from "@ant-design/icons";
 import {
   PieChart,
   Pie,
@@ -40,6 +42,7 @@ import {
 } from "recharts";
 import exifr from "exifr";
 import AMapLoader from "@amap/amap-jsapi-loader";
+import { message as AntMessage } from "antd";
 
 const { Header, Content, Sider } = Layout;
 const { Panel } = Collapse;
@@ -52,6 +55,68 @@ function App() {
   const [showRegister, setShowRegister] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
   const [projects, setProjects] = useState([]);
+  const [isRestored, setIsRestored] = useState(false);
+
+
+// 页面加载时，从 localStorage 恢复保存的项目数据（并修复 createdAt）
+useEffect(() => {
+  try {
+    const saved = localStorage.getItem("projects");
+    if (!saved) return;
+
+    const parsed = JSON.parse(saved);
+    // 将 createdAt (ISO string) 转回 Date 对象
+    const restored = parsed.map((p) => ({
+      ...p,
+      videoTasks: (p.videoTasks || []).map((t) => ({
+        ...t,
+        // 如果是 ISO 字符串则转 Date，否则保留
+        createdAt: t.createdAt ? new Date(t.createdAt) : null,
+        // file 仍然为 null（文件需要用户重新上传）
+        file: null,
+      })),
+    }));
+
+    setProjects(restored);
+
+    // 可选：如果之前没有 currentProject，自动选第一个
+    if (restored.length > 0) {
+      setCurrentProject(restored[0]);
+    }
+  } catch (err) {
+    console.error("从 localStorage 恢复 projects 失败:", err);
+    localStorage.removeItem("projects");
+  }
+}, []);
+
+// 每当 projects 更新时，将其保存到 localStorage
+useEffect(() => {
+if (!isRestored) return; // ✅ 未恢复完成前不保存
+console.log("💾 正在保存 projects:", projects);  
+  try {
+    const serializable = projects.map((p) => ({
+      id: p.id,
+      name: p.name,
+      // videoTasks 保留可序列化的字段（不保存 file 对象）
+      videoTasks: (p.videoTasks || []).map((t) => ({
+        id: t.id,
+        name: t.name,
+        // createdAt 统一保存为 ISO 字符串
+        createdAt: t.createdAt ? (t.createdAt instanceof Date ? t.createdAt.toISOString() : t.createdAt) : null,
+        location: t.location || null,
+        shareAllowed: !!t.shareAllowed,
+        // analysisResults 里应该全部是可序列化字段（数字/数组/对象）
+        analysisResults: t.analysisResults || null,
+      })),
+    }));
+    localStorage.setItem("projects", JSON.stringify(serializable));
+  } catch (err) {
+    console.error("保存 projects 到 localStorage 失败:", err);
+  }
+}, [projects]);
+
+
+
   const [currentProject, setCurrentProject] = useState(null);
   const [currentVideoTask, setCurrentVideoTask] = useState(null);
   const [isProjectModalVisible, setIsProjectModalVisible] = useState(false);
@@ -70,6 +135,7 @@ function App() {
     newEnergy: false,
   });
   const [analyzing, setAnalyzing] = useState(false);
+  const [messageApi, contextHolder] = AntMessage.useMessage();
 
   const mapRef = useRef(null);
   const markerRef = useRef(null);
@@ -120,18 +186,23 @@ function App() {
 
     const res = await fetch(`${API_BASE_URL}/register`, {
       method: "POST",
-      body: formData
+      body: formData,
     });
 
     const data = await res.json();
 
-    if (!res.ok) throw new Error(data.detail || "注册失败");
-    message.success("注册成功，请登录");
+    if (!res.ok) {
+      throw new Error(data.detail || "注册失败");
+    }
+
+    message.success(data.message || "注册成功，请登录。");
     setShowRegister(false);
   } catch (err) {
+    console.error("注册错误:", err);
     message.error(err.message);
   }
 };
+
 
 // 处理邮箱/手机号+密码登录
 const handleEmailLogin = async (values) => {
@@ -147,60 +218,182 @@ const handleEmailLogin = async (values) => {
 
     const data = await res.json();
 
-    if (!res.ok) throw new Error(data.detail || "登录失败");
-    message.success("登录成功");
+    if (!res.ok) {
+      throw new Error(data.detail || "登录失败");
+    }
 
-    // 保存 token 到 localStorage
-    localStorage.setItem("token", data.access_token);
-
-    // 更新登录状态
+    messageApi.success("登录成功！");
+    localStorage.setItem("access_token", data.access_token);
     setLoggedIn(true);
   } catch (err) {
-    message.error(err.message);
+    console.error("登录错误:", err);
+    messageApi.error(err.message);
+  }
+};
+
+const handleLogout = () => {
+  // 清除登录凭证
+  localStorage.removeItem("access_token");
+  localStorage.removeItem("user_id");
+
+  // 清除所有项目数据（包括视频与分析结果）
+  localStorage.removeItem("projects");
+
+  // 清除当前会话状态
+  setLoggedIn(false);
+  setCurrentProject(null);
+  setCurrentVideoTask(null);
+  setProjects([]); // 同步清空内存中数据
+   
+   projects.forEach((p) => {
+  p.videoTasks.forEach((t) => {
+    deleteVideoFromDB(`${p.id}_${t.id}`);
+  });
+});
+
+  messageApi.success("已退出登录");
+};
+
+  const handleCreateProject = (values) => {
+  const newProject = { name: values.name, id: Date.now(), videoTasks: [] };
+  setProjects((prev) => {
+    const next = [...prev, newProject];
+    return next;
+  });
+  setCurrentProject(newProject);
+  setIsProjectModalVisible(false);
+};
+
+
+  const handleUploadChange = ({ fileList }) => {
+  setUploadList(fileList);
+
+  // 找出本次新增的文件（用 uid 去重）
+  const newFiles = fileList.filter((file) => !processedFiles.has(file.uid));
+
+  if (newFiles.length > 0 && currentProject) {
+    const newProcessedFiles = new Set(processedFiles);
+    newFiles.forEach((file) => newProcessedFiles.add(file.uid));
+
+    // 构造 videoTasks（包含 file 对象供当前会话使用）
+    const newVideoTasks = newFiles.map((file) => ({
+      id: file.uid,
+      name: file.name,
+      file: file.originFileObj || file,
+      preview: file.originFileObj ? URL.createObjectURL(file.originFileObj) : undefined,
+      location: null,
+      shareAllowed: false,
+      analysisResults: null,
+      createdAt: new Date(),
+    }));
+
+    // 更新 projects（函数式更新更安全）
+    setProjects((prevProjects) => {
+      const updated = prevProjects.map((project) => {
+        if (project.id === currentProject.id) {
+          return { ...project, videoTasks: [...(project.videoTasks || []), ...newVideoTasks] };
+        }
+        return project;
+      });
+      return updated;
+    });
+
+    // 更新 currentProject 引用为最新对象
+    setCurrentProject((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        videoTasks: [...(prev.videoTasks || []), ...newVideoTasks],
+      };
+    });
+
+    setProcessedFiles(newProcessedFiles);
+    messageApi.success(`成功添加 ${newFiles.length} 个文件`);
+
+    // 保存每个文件到 IndexedDB（异步，但不阻塞 UI）
+    newFiles.forEach((file) => {
+      const id = `${currentProject.id}_${file.uid}`;
+      const blob = file.originFileObj || file; // File/Blob
+      saveVideoToDB(id, blob)
+        .then(() => {
+          console.log("Saved video to DB:", id);
+        })
+        .catch((err) => {
+          console.error("保存视频到 DB 失败:", id, err);
+        });
+    });
   }
 };
 
 
-  const handleCreateProject = (values) => {
-    const newProject = { name: values.name, id: Date.now(), videoTasks: [] };
-    setProjects([...projects, newProject]);
-    setCurrentProject(newProject);
-    setIsProjectModalVisible(false);
-  };
-
-  const handleUploadChange = ({ fileList }) => {
-    setUploadList(fileList);
-    const newFiles = fileList.filter((file) => !processedFiles.has(file.uid));
-    if (newFiles.length > 0 && currentProject) {
-      const newProcessedFiles = new Set(processedFiles);
-      newFiles.forEach((file) => newProcessedFiles.add(file.uid));
-      const newVideoTasks = newFiles.map((file) => ({
-        id: file.uid,
-        name: file.name,
-        file: file.originFileObj || file,
-        location: null,
-        shareAllowed: false,
-        analysisResults: null,
-        createdAt: new Date(),
-      }));
-      const updatedProjects = projects.map((project) => {
-        if (project.id === currentProject.id) {
-          return {
-            ...project,
-            videoTasks: [...project.videoTasks, ...newVideoTasks],
-          };
-        }
-        return project;
-      });
-      setProjects(updatedProjects);
-      setCurrentProject(updatedProjects.find((p) => p.id === currentProject.id));
-      setProcessedFiles(newProcessedFiles);
-      message.success(`成功添加 ${newFiles.length} 个文件`);
-    }
-  };
-
   const getCurrentProjectVideoTasks = () =>
     currentProject ? currentProject.videoTasks : [];
+  
+  // 页面加载时，从 localStorage 恢复登录状态 + 保存的项目
+useEffect(() => {
+  const token = localStorage.getItem("access_token");
+  if (token) {
+    setLoggedIn(true);
+  }
+
+  try {
+    const saved = localStorage.getItem("projects");
+    if (!saved) return;
+
+    const parsed = JSON.parse(saved);
+    const restored = parsed.map((p) => ({
+      ...p,
+      videoTasks: (p.videoTasks || []).map((t) => ({
+        ...t,
+        createdAt: t.createdAt ? new Date(t.createdAt) : null,
+        file: null,
+      })),
+    }));
+
+    setProjects(restored);
+
+    if (restored.length > 0) {
+      setCurrentProject(restored[0]);
+    }
+  } catch (err) {
+    console.error("从 localStorage 恢复 projects 失败:", err);
+    localStorage.removeItem("projects");
+  } finally {
+    setIsRestored(true); // ✅ 一定要加上 finally
+  }
+}, []);
+
+useEffect(() => {
+  if (!isRestored || projects.length === 0) return;
+
+  // 遍历每个项目和任务
+  projects.forEach((project) => {
+    project.videoTasks.forEach(async (task) => {
+      const id = `${project.id}_${task.id}`;
+      const file = await getVideoFromDB(id);
+      if (file) {
+        // 生成临时URL，用于预览
+        task.file = file;
+        task.preview = URL.createObjectURL(file);
+        // 触发状态更新
+        setProjects((prev) =>
+          prev.map((p) =>
+            p.id === project.id
+              ? {
+                  ...p,
+                  videoTasks: p.videoTasks.map((t) =>
+                    t.id === task.id ? { ...task } : t
+                  ),
+                }
+              : p
+          )
+        );
+      }
+    });
+  });
+}, [isRestored]);
+
+
 
   useEffect(() => {
     if (!currentVideoTask?.file) return;
@@ -510,6 +703,7 @@ const handleSearchPlace = () => {
         width: "100vw",
       }}
     >
+      {contextHolder}
       <Card title="车辆信息智能识别与数据分析平台" style={{ width: 400 }}>
         <Tabs defaultActiveKey="1" items={loginTabs} />
       </Card>
@@ -577,8 +771,31 @@ const handleSearchPlace = () => {
   return (
     <Layout style={{ minHeight: "100vh", width: "100vw" }}>
       <Header style={{ color: "white", fontSize: 20, padding: "0 24px", position: "sticky", top: 0, zIndex: 1 }}>
-        车辆信息智能识别与数据分析平台
-      </Header>
+  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+    <div style={{ fontSize: 20, fontWeight: 600 }}>
+      车辆信息智能识别与数据分析平台
+    </div>
+
+    {/* 右侧按钮：简单退出 */}
+    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+      {/* 若你想要一个带确认的退出：用 Popconfirm（下面注释掉的例子） */}
+      {/*
+      <Popconfirm
+        title="确定要退出登录吗？"
+        onConfirm={handleLogout}
+        okText="确定"
+        cancelText="取消"
+      >
+        <Button danger>退出登录</Button>
+      </Popconfirm>
+      */}
+
+      {/* 或者直接退出（简洁） */}
+      <Button danger onClick={handleLogout}>退出登录</Button>
+    </div>
+  </div>
+</Header>
+
       <Layout style={{ flexDirection: "row", flex: 1 }}>
         <Sider width={280} style={{ background: "#001529", overflow: "auto", height: "calc(100vh - 64px)" }}>
           <Menu
@@ -884,5 +1101,76 @@ const handleSearchPlace = () => {
     </Layout>
   );
 }
+
+// 初始化数据库
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open("VehicleAppDB", 1);
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains("videos")) {
+        db.createObjectStore("videos", { keyPath: "id" });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = (e) => reject(e);
+  });
+}
+
+// 保存文件（可靠的 Promise 实现）
+async function saveVideoToDB(id, file) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    try {
+      const tx = db.transaction("videos", "readwrite");
+      const store = tx.objectStore("videos");
+      const req = store.put({ id, file });
+      req.onsuccess = () => resolve(true);
+      req.onerror = (e) => reject(e);
+      // 保险：在事务完成时也 resolve（防止某些浏览器不触发 req.onsuccess）
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = (e) => reject(e);
+      tx.onabort = (e) => reject(e);
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+// 读取文件（可靠的 Promise 实现）
+async function getVideoFromDB(id) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    try {
+      const tx = db.transaction("videos", "readonly");
+      const store = tx.objectStore("videos");
+      const req = store.get(id);
+      req.onsuccess = () => resolve(req.result ? req.result.file : null);
+      req.onerror = (e) => reject(e);
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+// 删除文件（可靠）
+async function deleteVideoFromDB(id) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    try {
+      const tx = db.transaction("videos", "readwrite");
+      const store = tx.objectStore("videos");
+      const req = store.delete(id);
+      req.onsuccess = () => resolve(true);
+      req.onerror = (e) => reject(e);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = (e) => reject(e);
+      tx.onabort = (e) => reject(e);
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
 
 export default App;
