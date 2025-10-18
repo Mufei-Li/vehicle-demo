@@ -260,13 +260,15 @@ const handleLogout = () => {
   const handleCreateProject = async (values) => {
   const token = localStorage.getItem("access_token");
   try {
-    const res = await fetch(`${API_BASE_URL}/create_project`, {
+    const formData = new FormData();
+    formData.append("name", values.name);
+
+    const res = await fetch(`${API_BASE_URL}/video/create_project`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
       },
-      body: JSON.stringify({ name: values.name }),
+      body: formData,
     });
 
     const data = await res.json();
@@ -291,14 +293,18 @@ const handleLogout = () => {
 
 
 
+
   const handleUploadChange = async ({ fileList }) => {
   setUploadList(fileList);
+
   const token = localStorage.getItem("access_token");
+
   if (!currentProject) {
     message.error("请先创建或选择一个项目");
     return;
   }
 
+  // 找出新文件（未处理过的）
   const newFiles = fileList.filter((file) => !processedFiles.has(file.uid));
   if (newFiles.length === 0) return;
 
@@ -307,10 +313,10 @@ const handleLogout = () => {
   for (const file of newFiles) {
     try {
       const formData = new FormData();
-      formData.append("file", file.originFileObj || file);
+      formData.append("video", file.originFileObj || file); // ⚡ 注意这里要和后端字段名一致
       formData.append("project_id", currentProject.id);
 
-      const res = await fetch(API_UPLOAD_VIDEO, {
+      const res = await fetch(`${API_BASE_URL}/video/upload_video`, { // ✅ URL 改为 /video/upload_video
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -321,9 +327,9 @@ const handleLogout = () => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "上传失败");
 
-      // 上传成功后保存到 state
+      // 构建新视频任务对象
       const newTask = {
-        id: data.video_id, // ✅ 后端返回的 video_id
+        id: data.video_id,
         name: file.name,
         file: file.originFileObj || file,
         preview: URL.createObjectURL(file.originFileObj || file),
@@ -333,13 +339,19 @@ const handleLogout = () => {
         createdAt: new Date(),
       };
 
+      // 更新左侧菜单（projects）和右侧任务列表
       setProjects((prev) =>
-        prev.map((p) =>
-          p.id === currentProject.id
-            ? { ...p, videoTasks: [...(p.videoTasks || []), newTask] }
-            : p
+        prev.map((project) =>
+          project.id === currentProject.id
+            ? { ...project, videoTasks: [...(project.videoTasks || []), newTask] }
+            : project
         )
       );
+
+      // 如果右侧正在显示当前项目的视频任务，直接刷新 currentVideoTask 列表
+      if (currentProject.id === currentProject.id) {
+        setCurrentVideoTask(newTask);
+      }
 
       newProcessed.add(file.uid);
       message.success(`${file.name} 上传成功！`);
@@ -351,8 +363,6 @@ const handleLogout = () => {
 
   setProcessedFiles(newProcessed);
 };
-
-
 
   const getCurrentProjectVideoTasks = () =>
     currentProject ? currentProject.videoTasks : [];
@@ -580,94 +590,96 @@ const handleSearchPlace = () => {
 
 
   const handleAnalyzeVideo = async () => {
-    if (!currentVideoTask?.file) {
-      message.error("请先选择视频文件");
-      return;
+  if (!currentVideoTask?.id) {
+    message.error("请先选择视频");
+    return;
+  }
+
+  setAnalyzing(true);
+
+  try {
+    const loadingMsg = message.loading("正在分析视频中，这可能需要一些时间...", 0);
+
+    const formData = new FormData();
+    formData.append("video_id", currentVideoTask.id);
+
+    const response = await fetch(`${API_BASE_URL}/video/analyze_video`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+        // 不要设置 Content-Type
+      },
+      body: formData,
+    });
+
+    loadingMsg(); // 关闭 loading
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`分析失败: ${response.status} - ${errorText}`);
     }
 
-    setAnalyzing(true);
-  
-    try {
-      message.loading("正在分析视频中，这可能需要一些时间...", 0);
-    
-      const formData = new FormData();
-      formData.append("video", currentVideoTask.file);
+    const result = await response.json();
 
-      const response = await fetch(`${API_ANALYZE_VIDEO}?video_id=${currentVideoTask.id}`, {
-  method: "POST",
-  headers: {
-    Authorization: `Bearer ${localStorage.getItem("access_token")}`,
-  },
-});
-
-
-      message.destroy();
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`分析失败: ${response.status} - ${errorText}`);
+    // 更新项目数据
+    const updatedProjects = projects.map((project) => {
+      if (project.id === currentProject.id) {
+        const updatedTasks = project.videoTasks.map((task) => {
+          if (task.id === currentVideoTask.id) {
+            return {
+              ...task,
+              analysisResults: {
+                vehicleCount: result.vehicle_count,
+                framesChecked: result.frames_checked,
+                pieData: [
+                  { name: "车辆", value: result.vehicle_count },
+                  { name: "其他", value: Math.max(1, result.frames_checked - result.vehicle_count) }
+                ],
+                barData: [{ name: "车辆数量", count: result.vehicle_count }],
+                plateColorData: demoPlateColorData,
+                newEnergyData: demoNewEnergyData,
+                vehicleModelData: demoVehicleModelData,
+                params: { ...analysisParams }
+              }
+            };
+          }
+          return task;
+        });
+        return { ...project, videoTasks: updatedTasks };
       }
+      return project;
+    });
 
-      const result = await response.json();
-    
-      // 更新项目数据
-      const updatedProjects = projects.map((project) => {
-        if (project.id === currentProject.id) {
-          const updatedTasks = project.videoTasks.map((task) => {
-            if (task.id === currentVideoTask.id) {
-              return {
-                ...task,
-                analysisResults: {
-                  vehicleCount: result.vehicle_count,
-                  framesChecked: result.frames_checked,
-                  pieData: [
-                    { name: "车辆", value: result.vehicle_count },
-                    { name: "其他", value: Math.max(1, result.frames_checked - result.vehicle_count) }
-                  ],
-                  barData: [{ name: "车辆数量", count: result.vehicle_count }],
-                  plateColorData: demoPlateColorData,
-                  newEnergyData: demoNewEnergyData,
-                  vehicleModelData: demoVehicleModelData,
-                  params: { ...analysisParams }
-                }
-              };
-            }
-            return task;
-          });
-          return { ...project, videoTasks: updatedTasks };
-        }
-        return project;
-      });
+    setProjects(updatedProjects);
+    setCurrentVideoTask({
+      ...currentVideoTask,
+      analysisResults: {
+        vehicleCount: result.vehicle_count,
+        framesChecked: result.frames_checked,
+        pieData: [
+          { name: "车辆", value: result.vehicle_count },
+          { name: "其他", value: Math.max(1, result.frames_checked - result.vehicle_count) }
+        ],
+        barData: [{ name: "车辆数量", count: result.vehicle_count }],
+        plateColorData: demoPlateColorData,
+        newEnergyData: demoNewEnergyData,
+        vehicleModelData: demoVehicleModelData,
+        params: { ...analysisParams }
+      }
+    });
 
-      setProjects(updatedProjects);
-      setCurrentVideoTask({
-        ...currentVideoTask,
-        analysisResults: {
-          vehicleCount: result.vehicle_count,
-          framesChecked: result.frames_checked,
-          pieData: [
-            { name: "车辆", value: result.vehicle_count },
-            { name: "其他", value: Math.max(1, result.frames_checked - result.vehicle_count) }
-          ],
-          barData: [{ name: "车辆数量", count: result.vehicle_count }],
-          plateColorData: demoPlateColorData,
-          newEnergyData: demoNewEnergyData,
-          vehicleModelData: demoVehicleModelData,
-          params: { ...analysisParams }
-        }
-      });
-    
-      setAnalysisActiveKey(['1']);
-      message.success(`分析完成！在 ${result.frames_checked} 帧中检测到 ${result.vehicle_count} 辆车辆`);
+    setAnalysisActiveKey(['1']);
+    message.success(`分析完成！在 ${result.frames_checked} 帧中检测到 ${result.vehicle_count} 辆车辆`);
 
-    } catch (error) {
-      message.destroy();
-      console.error("分析错误:", error);
-      message.error(`分析失败: ${error.message}`);
-    } finally {
-      setAnalyzing(false);
-    }
-  };
+  } catch (error) {
+    message.destroy();
+    console.error("分析错误:", error);
+    message.error(`分析失败: ${error.message}`);
+  } finally {
+    setAnalyzing(false);
+  }
+};
+
 
   const loginTabs = [
     {
