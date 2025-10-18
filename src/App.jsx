@@ -51,6 +51,9 @@ const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042"];
 
 const API_BASE_URL = "https://ragpp-vehicle-detection-backend.hf.space";
 
+const API_UPLOAD_VIDEO = `${API_BASE_URL}/upload_video`;
+const API_ANALYZE_VIDEO = `${API_BASE_URL}/analyze_video`;
+
 function App() {
   const [showRegister, setShowRegister] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
@@ -254,76 +257,101 @@ const handleLogout = () => {
   messageApi.success("已退出登录");
 };
 
-  const handleCreateProject = (values) => {
-  const newProject = { name: values.name, id: Date.now(), videoTasks: [] };
-  setProjects((prev) => {
-    const next = [...prev, newProject];
-    return next;
-  });
-  setCurrentProject(newProject);
-  setIsProjectModalVisible(false);
-};
+  const handleCreateProject = async (values) => {
+  const token = localStorage.getItem("access_token");
+  try {
+    const res = await fetch(`${API_BASE_URL}/create_project`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name: values.name }),
+    });
 
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "创建项目失败");
 
-  const handleUploadChange = ({ fileList }) => {
-  setUploadList(fileList);
-
-  // 找出本次新增的文件（用 uid 去重）
-  const newFiles = fileList.filter((file) => !processedFiles.has(file.uid));
-
-  if (newFiles.length > 0 && currentProject) {
-    const newProcessedFiles = new Set(processedFiles);
-    newFiles.forEach((file) => newProcessedFiles.add(file.uid));
-
-    // 构造 videoTasks（包含 file 对象供当前会话使用）
-    const newVideoTasks = newFiles.map((file) => ({
-      id: file.uid,
-      name: file.name,
-      file: file.originFileObj || file,
-      preview: file.originFileObj ? URL.createObjectURL(file.originFileObj) : undefined,
-      location: null,
-      shareAllowed: false,
-      analysisResults: null,
+    const newProject = {
+      id: data.project_id,
+      name: values.name,
+      videoTasks: [],
       createdAt: new Date(),
-    }));
-
-    // 更新 projects（函数式更新更安全）
-    setProjects((prevProjects) => {
-      const updated = prevProjects.map((project) => {
-        if (project.id === currentProject.id) {
-          return { ...project, videoTasks: [...(project.videoTasks || []), ...newVideoTasks] };
-        }
-        return project;
-      });
-      return updated;
-    });
-
-    // 更新 currentProject 引用为最新对象
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        videoTasks: [...(prev.videoTasks || []), ...newVideoTasks],
-      };
-    });
-
-    setProcessedFiles(newProcessedFiles);
-    messageApi.success(`成功添加 ${newFiles.length} 个文件`);
-
-    // 保存每个文件到 IndexedDB（异步，但不阻塞 UI）
-    newFiles.forEach((file) => {
-      const id = `${currentProject.id}_${file.uid}`;
-      const blob = file.originFileObj || file; // File/Blob
-      saveVideoToDB(id, blob)
-        .then(() => {
-          console.log("Saved video to DB:", id);
-        })
-        .catch((err) => {
-          console.error("保存视频到 DB 失败:", id, err);
-        });
-    });
+    };
+    setProjects((prev) => [...prev, newProject]);
+    setCurrentProject(newProject);
+    message.success("项目创建成功！");
+  } catch (err) {
+    console.error("创建项目错误:", err);
+    message.error(err.message);
+  } finally {
+    setIsProjectModalVisible(false);
   }
 };
+
+
+
+  const handleUploadChange = async ({ fileList }) => {
+  setUploadList(fileList);
+  const token = localStorage.getItem("access_token");
+  if (!currentProject) {
+    message.error("请先创建或选择一个项目");
+    return;
+  }
+
+  const newFiles = fileList.filter((file) => !processedFiles.has(file.uid));
+  if (newFiles.length === 0) return;
+
+  const newProcessed = new Set(processedFiles);
+
+  for (const file of newFiles) {
+    try {
+      const formData = new FormData();
+      formData.append("file", file.originFileObj || file);
+      formData.append("project_id", currentProject.id);
+
+      const res = await fetch(API_UPLOAD_VIDEO, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "上传失败");
+
+      // 上传成功后保存到 state
+      const newTask = {
+        id: data.video_id, // ✅ 后端返回的 video_id
+        name: file.name,
+        file: file.originFileObj || file,
+        preview: URL.createObjectURL(file.originFileObj || file),
+        location: null,
+        shareAllowed: false,
+        analysisResults: null,
+        createdAt: new Date(),
+      };
+
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === currentProject.id
+            ? { ...p, videoTasks: [...(p.videoTasks || []), newTask] }
+            : p
+        )
+      );
+
+      newProcessed.add(file.uid);
+      message.success(`${file.name} 上传成功！`);
+    } catch (err) {
+      console.error("上传失败:", err);
+      message.error(`${file.name} 上传失败: ${err.message}`);
+    }
+  }
+
+  setProcessedFiles(newProcessed);
+};
+
 
 
   const getCurrentProjectVideoTasks = () =>
@@ -565,10 +593,13 @@ const handleSearchPlace = () => {
       const formData = new FormData();
       formData.append("video", currentVideoTask.file);
 
-      const response = await fetch(`${API_BASE_URL}/analyze`, {
-        method: "POST",
-        body: formData,
-      });
+      const response = await fetch(`${API_ANALYZE_VIDEO}?video_id=${currentVideoTask.id}`, {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+  },
+});
+
 
       message.destroy();
 
