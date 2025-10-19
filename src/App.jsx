@@ -53,7 +53,12 @@ const API_BASE_URL = "https://ragpp-vehicle-detection-backend.hf.space";
 
 const API_UPLOAD_VIDEO = `${API_BASE_URL}/upload_video`;
 const API_ANALYZE_VIDEO = `${API_BASE_URL}/analyze_video`;
-
+const API_PROJECTS = `${API_BASE_URL}/video/projects`;
+const API_CREATE_PROJECT = `${API_BASE_URL}/video/create_project`;
+const API_DELETE_PROJECT = (projectId) => `${API_BASE_URL}/video/delete_project/${projectId}`;
+const API_DELETE_VIDEO = (videoId) => `${API_BASE_URL}/video/delete_video/${videoId}`;
+const API_LIST_VIDEOS = (projectId) =>
+  `${API_BASE_URL}/video/list_videos?project_id=${projectId}`;
 function App() {
   const [showRegister, setShowRegister] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
@@ -121,6 +126,7 @@ console.log("💾 正在保存 projects:", projects);
 
 
   const [currentProject, setCurrentProject] = useState(null);
+  const [videos, setVideos] = useState([]); // 当前项目下视频列表
   const [currentVideoTask, setCurrentVideoTask] = useState(null);
   const [isProjectModalVisible, setIsProjectModalVisible] = useState(false);
   const [uploadList, setUploadList] = useState([]);
@@ -170,6 +176,7 @@ console.log("💾 正在保存 projects:", projects);
     // 保存 token 到 localStorage
     localStorage.setItem('access_token', result.access_token);
     setLoggedIn(true);
+    await fetchProjects() // ✅ 登录后立即加载用户项目
     message.success('登录成功！');
     
   } catch (error) {
@@ -228,6 +235,7 @@ const handleEmailLogin = async (values) => {
     messageApi.success("登录成功！");
     localStorage.setItem("access_token", data.access_token);
     setLoggedIn(true);
+    await fetchProjects();
   } catch (err) {
     console.error("登录错误:", err);
     messageApi.error(err.message);
@@ -283,6 +291,7 @@ const handleLogout = () => {
     setProjects((prev) => [...prev, newProject]);
     setCurrentProject(newProject);
     message.success("项目创建成功！");
+    fetchProjects();
   } catch (err) {
     console.error("创建项目错误:", err);
     message.error(err.message);
@@ -291,7 +300,105 @@ const handleLogout = () => {
   }
 };
 
+// 获取当前用户的所有项目
+const fetchProjects = async () => {
+  try {
+    const token = localStorage.getItem("access_token") || localStorage.getItem("access_token");
+    const res = await fetch(API_PROJECTS, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error("加载项目失败");
+    const data = await res.json();
 
+    // 为每个项目加载视频，并把 filename → name，created_at → createdAt
+    const projectsWithVideos = await Promise.all(
+      data.map(async (p) => {
+        const resVideos = await fetch(API_LIST_VIDEOS(p.id), {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const videos = resVideos.ok ? await resVideos.json() : [];
+        const formattedVideos = videos.map((v) => ({
+          ...v,
+          // 统一：优先保留后端可能已有的 name，否则用 filename，再否则用 “视频 <id>”
+          name: v.name ?? v.filename ?? `视频 ${v.id}`,
+          // 统一时间字段
+          createdAt: v.created_at ? new Date(v.created_at) : null,
+        }));
+        return { ...p, videoTasks: formattedVideos };
+      })
+    );
+
+    setProjects(projectsWithVideos);
+
+    // 默认选中第一个项目
+    if (projectsWithVideos.length > 0 && !currentProject) {
+      setCurrentProject(projectsWithVideos[0]);
+      setVideos(projectsWithVideos[0].videoTasks);
+    }
+  } catch (err) {
+    console.error("❌ 获取项目失败:", err);
+  }
+};
+
+// 获取指定项目下的视频
+const fetchVideos = async (projectId) => {
+  try {
+    const token = localStorage.getItem("access_token") || localStorage.getItem("access_token");
+    const res = await fetch(API_LIST_VIDEOS(projectId), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error("加载视频失败");
+    const data = await res.json();
+
+    const formatted = data.map((v) => ({
+      ...v,
+      name: v.name ?? v.filename ?? `视频 ${v.id}`,
+      createdAt: v.created_at ? new Date(v.created_at) : null,
+      videoUrl: v.path || `${API_BASE_URL}/video/file/${v.id}`,
+    }));
+
+    // 更新右侧备用的 videos（虽然当前列表用的是 currentProject.videoTasks，但保留不冲突）
+    setVideos(formatted);
+
+    // 关键：把当前项目在 projects 里的 videoTasks 一并更新
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.id === projectId ? { ...p, videoTasks: formatted } : p
+      )
+    );
+
+    // 如果当前就停留在这个项目上，同步一下 currentProject
+    if (currentProject?.id === projectId) {
+      setCurrentProject((prev) => prev ? { ...prev, videoTasks: formatted } : prev);
+    }
+  } catch (err) {
+    console.error("❌ 获取视频失败:", err);
+  }
+};
+
+const handleDeleteProject = async (projectId) => {
+  const token = localStorage.getItem("access_token");
+  try {
+    const res = await fetch(API_DELETE_PROJECT(projectId), {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "删除项目失败");
+    message.success(data.message || "项目已删除");
+
+    // 从前端状态移除
+    const updated = projects.filter((p) => p.id !== projectId);
+    setProjects(updated);
+    if (currentProject?.id === projectId) {
+      setCurrentProject(null);
+      setCurrentVideoTask(null);
+    }
+  } catch (err) {
+    console.error("❌ 删除项目失败:", err);
+    message.error(err.message);
+  }
+};
 
 
   const handleUploadChange = async ({ fileList }) => {
@@ -333,6 +440,7 @@ const handleLogout = () => {
         name: file.name,
         file: file.originFileObj || file,
         preview: URL.createObjectURL(file.originFileObj || file),
+	videoUrl: `${API_BASE_URL}/video/file/${data.video_id}`,
         location: null,
         shareAllowed: false,
         analysisResults: null,
@@ -355,6 +463,7 @@ const handleLogout = () => {
 
       newProcessed.add(file.uid);
       message.success(`${file.name} 上传成功！`);
+      if (currentProject) fetchVideos(currentProject.id); // ✅ 重新加载视频列表
     } catch (err) {
       console.error("上传失败:", err);
       message.error(`${file.name} 上传失败: ${err.message}`);
@@ -364,8 +473,11 @@ const handleLogout = () => {
   setProcessedFiles(newProcessed);
 };
 
-  const getCurrentProjectVideoTasks = () =>
-    currentProject ? currentProject.videoTasks : [];
+  const getCurrentProjectVideoTasks = () => {
+  if (!currentProject) return [];
+  return currentProject.videoTasks || [];
+};
+
   
   // 页面加载时，从 localStorage 恢复登录状态 + 保存的项目
 useEffect(() => {
@@ -719,21 +831,52 @@ const handleSearchPlace = () => {
 
   ];
 
-  const generateMenuItems = () => [
-    ...projects.map((project) => ({
-      key: project.id,
-      icon: <FolderOutlined />,
-      label: project.name,
-      children: project.videoTasks.map((task) => ({
-        key: task.id,
-        icon: <FileImageOutlined />,
-        label: task.name,
-        onClick: () => setCurrentVideoTask(task),
-      })),
-      onTitleClick: () => { setCurrentProject(project); setCurrentVideoTask(null); },
+const generateMenuItems = () => [
+  ...projects.map((project) => ({
+    key: `project-${project.id}`, // ✅ 项目前缀
+    icon: <FolderOutlined />,
+    label: (
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
+        <span>{project.name}</span>
+        <Button
+          type="link"
+          danger
+          size="small"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleDeleteProject(project.id);
+          }}
+        >
+          删除
+        </Button>
+      </div>
+    ),
+    children: (project.videoTasks || []).map((task) => ({
+      key: `video-${task.id}`, // ✅ 视频前缀
+      icon: <FileImageOutlined />,
+      label: task.name || task.filename || `视频 ${task.id}`,
+      onClick: () => setCurrentVideoTask(task),
     })),
-    { key: "new-project", icon: <PlusOutlined />, label: "新建项目", onClick: showCreateProject },
-  ];
+    onTitleClick: () => {
+      setCurrentProject(project);
+      setCurrentVideoTask(null);
+      fetchVideos(project.id);
+    },
+  })),
+  {
+    key: "new-project",
+    icon: <PlusOutlined />,
+    label: "新建项目",
+    onClick: showCreateProject,
+  },
+];
+
 
   if (!loggedIn) {
   return (
@@ -859,68 +1002,150 @@ const handleSearchPlace = () => {
             </div>
           )}
 
-          {currentProject && !currentVideoTask && (
-            <div style={{ width: "100%" }}>
-              <Card title={`项目: ${currentProject.name}`} style={{ marginBottom: 24 }}>
-                <Upload
-                  fileList={uploadList}
-                  onChange={handleUploadChange}
-                  beforeUpload={() => false}
-                  multiple
-                  showUploadList={false}
-                  style={{ marginBottom: 24 }}
-                >
-                  <Button icon={<UploadOutlined />}>上传视频</Button>
-                </Upload>
+         {currentProject && !currentVideoTask && (
+  <div style={{ width: "100%" }}>
+    {/* 当前项目标题与上传按钮 */}
+    <Card title={`项目: ${currentProject.name}`} style={{ marginBottom: 24 }}>
+      <Upload
+        fileList={uploadList}
+        onChange={handleUploadChange}
+        beforeUpload={() => false}
+        multiple
+        showUploadList={false}
+        style={{ marginBottom: 24 }}
+      >
+        <Button icon={<UploadOutlined />}>上传视频</Button>
+      </Upload>
 
-                <Card title="视频任务列表" style={{ marginTop: 16 }}>
-                  {getCurrentProjectVideoTasks().length > 0 ? (
-                    <List
-                      itemLayout="horizontal"
-                      dataSource={getCurrentProjectVideoTasks()}
-                      renderItem={(task) => (
-                        <List.Item
-                          actions={[
-                            <Button type="link" onClick={() => setCurrentVideoTask(task)}>查看详情</Button>,
-                            <Button type="link" danger onClick={() => {
-                              const updatedProjects = projects.map(project => {
-                                if (project.id === currentProject.id) {
-                                  return { ...project, videoTasks: project.videoTasks.filter(t => t.id !== task.id) };
-                                }
-                                return project;
-                              });
-                              setProjects(updatedProjects);
-                              setCurrentProject(updatedProjects.find(p => p.id === currentProject.id));
-                              message.success(`已删除任务: ${task.name}`);
-                            }}>删除</Button>
-                          ]}
-                        >
-                          <List.Item.Meta avatar={<Avatar icon={<FileImageOutlined />} />} title={task.name} description={`上传于: ${task.createdAt.toLocaleString()}`} />
-                          <div>{task.analysisResults ? <Tag color="green">已分析</Tag> : <Tag color="blue">待分析</Tag>}</div>
-                        </List.Item>
-                      )}
-                    />
+      {/* 视频任务列表 */}
+      <Card title="视频任务列表" style={{ marginTop: 16 }}>
+        {(getCurrentProjectVideoTasks()?.length || 0) > 0 ? (
+          <List
+            itemLayout="horizontal"
+            dataSource={getCurrentProjectVideoTasks()}
+            renderItem={(task) => (
+              <List.Item
+                actions={[
+                  <Button
+                    type="link"
+                    onClick={() => setCurrentVideoTask(task)}
+                  >
+                    查看详情
+                  </Button>,
+                  <Button
+  type="link"
+  danger
+  onClick={async () => {
+    try {
+      const token = localStorage.getItem("access_token");
+      const res = await fetch(API_DELETE_VIDEO(task.id), {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "删除视频失败");
+
+      message.success(data.message || "视频已删除");
+
+      // 从前端状态中同步移除
+      const updatedProjects = projects.map((project) => {
+        if (project.id === currentProject.id) {
+          return {
+            ...project,
+            videoTasks: (project.videoTasks || []).filter(
+              (t) => t.id !== task.id
+            ),
+          };
+        }
+        return project;
+      });
+      setProjects(updatedProjects);
+      setCurrentProject(
+        updatedProjects.find((p) => p.id === currentProject.id)
+      );
+    } catch (err) {
+      console.error("❌ 删除视频失败:", err);
+      message.error(err.message);
+    }
+  }}
+>
+  删除
+</Button>
+
+
+                ]}
+              >
+                <List.Item.Meta
+                  avatar={<Avatar icon={<FileImageOutlined />} />}
+                  title={task.name || task.filename || `视频任务 #${task.id}`}
+                  description={`上传于: ${
+                    task.created_at
+                      ? new Date(task.created_at).toLocaleString()
+                      : "未知时间"
+                  }`}
+                />
+                <div>
+                  {task.analysisResults ? (
+                    <Tag color="green">已分析</Tag>
                   ) : (
-                    <div style={{ textAlign: "center", padding: 20 }}>
-                      <p>暂无视频任务</p>
-                      <p>请上传视频/影像文件</p>
-                    </div>
+                    <Tag color="blue">待分析</Tag>
                   )}
-                </Card>
-              </Card>
-            </div>
-          )}
+                </div>
+              </List.Item>
+            )}
+          />
+        ) : (
+          <div style={{ textAlign: "center", padding: 20 }}>
+            <p>暂无视频任务</p>
+            <p>请上传视频/影像文件</p>
+          </div>
+        )}
+      </Card>
+    </Card>
+  </div>
+)}
+
+
+
+
 
           {currentProject && currentVideoTask && (
             <div style={{ width: "100%" }}>
               <div style={{ marginBottom: 16 }}>
                 <Button type="link" onClick={() => setCurrentVideoTask(null)} style={{ padding: 0, marginBottom: 8 }}>&larr; 返回项目</Button>
-                <h2>{currentProject.name} / {currentVideoTask.name}</h2>
+                <h2>
+  		{currentProject.name} / {(currentVideoTask?.name || currentVideoTask?.filename || `视频 ${currentVideoTask?.id}`)}
+		</h2>
+
               </div>
 
-              <Card title="视频预览" style={{ marginBottom: 24, width: "100%" }}>
-                {previewUrl ? <video controls style={{ width: "100%", maxHeight: 400, background: "#000" }} src={previewUrl} /> : <p>暂无视频预览</p>}
-              </Card>
+<Card title="视频预览" style={{ marginBottom: 24, width: "100%" }}>
+  {(() => {
+    // 统一视频来源逻辑：后端URL > 本地预览
+    const videoSrc =
+      typeof currentVideoTask?.videoUrl === "string"
+        ? currentVideoTask.videoUrl
+        : typeof currentVideoTask?.path === "string"
+        ? currentVideoTask.path
+        : previewUrl;
+
+    if (!videoSrc) return <p>暂无视频预览</p>;
+
+    return (
+      <video
+        key={currentVideoTask?.id || "preview"}
+        controls
+        style={{
+          width: "100%",
+          maxHeight: 400,
+          background: "#000",
+        }}
+        src={videoSrc}
+      />
+    );
+  })()}
+</Card>
+
 
               <Card title="地理信息" style={{ marginBottom: 24, width: "100%", position: "relative" }}>
                 <div style={{ display: "flex", gap: 16, marginBottom: 8 }}>
