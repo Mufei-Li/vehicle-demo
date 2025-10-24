@@ -40,5 +40,36 @@
 .read-the-docs {
   color: #888;
 }
+body {
+  background-color: #f7f9fb;
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+.ant-layout {
+  background: #f7f9fb;
+}
+
+.ant-card {
+  border-radius: 12px !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+}
+
+.ant-btn {
+  border-radius: 6px !important;
+}
+
+.ant-input, .ant-select-selector {
+  border-radius: 6px !important;
+}
+
+.ant-tabs-tab {
+  font-weight: 500;
+}
+
+.ant-menu-light {
+  background: #fff !important;
+  border-right: 1px solid #f0f0f0 !important;
+}
+
 
 @import "leaflet/dist/leaflet.css";

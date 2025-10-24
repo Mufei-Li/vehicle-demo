@@ -43,6 +43,8 @@ import {
 import exifr from "exifr";
 import AMapLoader from "@amap/amap-jsapi-loader";
 import { message as AntMessage } from "antd";
+import "./App.css"; // 如果你想放入独立文件，可在项目中新建 src/App.css
+
 
 const { Header, Content, Sider } = Layout;
 const { Panel } = Collapse;
@@ -881,16 +883,30 @@ const generateMenuItems = () => [
   if (!loggedIn) {
   return (
     <div
-      style={{
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        minHeight: "100vh",
-        width: "100vw",
-      }}
-    >
+  style={{
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    minHeight: "90vh",
+    width: "95vw",             
+    overflow: "hidden",        // ✅ 防止滚动条干扰
+    background: "linear-gradient(135deg, #f0f4ff 0%, #ffffff 100%)", // ✅ 柔和渐变背景
+    padding: "24px",           // ✅ 给移动端留边距
+    boxSizing: "border-box",   // ✅ 防止计算超宽
+  }}
+>
       {contextHolder}
-      <Card title="车辆信息智能识别与数据分析平台" style={{ width: 400 }}>
+      <Card
+  title={<div style={{ textAlign: "center", fontWeight: 600 }}>🚗 车辆识别与数据分析平台</div>}
+  style={{
+      width: "100%",
+      maxWidth: 420,            // ✅ 限制最大宽度，防止拉伸
+      borderRadius: 16,
+      boxShadow: "0 6px 20px rgba(0,0,0,0.08)",
+      background: "#fff",
+    }}
+>
+
         <Tabs defaultActiveKey="1" items={loginTabs} />
       </Card>
 
@@ -955,8 +971,32 @@ const generateMenuItems = () => [
   ];
 
   return (
-    <Layout style={{ minHeight: "100vh", width: "100vw" }}>
-      <Header style={{ color: "white", fontSize: 20, padding: "0 24px", position: "sticky", top: 0, zIndex: 1 }}>
+    <Layout
+  style={{
+    minHeight: "100vh",
+    width: "95vw",       // ✅ 改为百分比宽度，不再使用 100vw
+    overflowX: "hidden", // ✅ 防止溢出滚动条
+  }}
+>
+
+      <Header
+  style={{
+    background: "#fff",
+    borderBottom: "1px solid #eaeaea",
+    color: "#333",
+    fontSize: 20,
+    padding: "0 24px",
+    position: "fixed",     // ✅ 改为 fixed，永远固定顶部
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 64,
+    zIndex: 1000,          // ✅ 提高层级
+    boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+  }}
+>
+
+
   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
     <div style={{ fontSize: 20, fontWeight: 600 }}>
       车辆信息智能识别与数据分析平台
@@ -983,16 +1023,37 @@ const generateMenuItems = () => [
 </Header>
 
       <Layout style={{ flexDirection: "row", flex: 1 }}>
-        <Sider width={280} style={{ background: "#001529", overflow: "auto", height: "calc(100vh - 64px)" }}>
+        <Sider
+  width={260}
+  style={{
+    background: "#fff",
+    borderRight: "1px solid #eaeaea",
+    overflow: "auto",
+    height: "calc(100vh - 64px)",
+  }}
+>
+
           <Menu
-            mode="inline"
-            selectedKeys={[currentProject?.id?.toString(), currentVideoTask?.id?.toString()]}
-            defaultOpenKeys={currentProject ? [currentProject.id.toString()] : []}
-            style={{ height: "100%", borderRight: 0 }}
-            items={generateMenuItems()}
-          />
+  mode="inline"
+  theme="light"   // ✅ 新增
+  selectedKeys={[currentProject?.id?.toString(), currentVideoTask?.id?.toString()]}
+  style={{ height: "100%", borderRight: 0 }}
+  items={generateMenuItems()}
+/>
+
         </Sider>
-        <Content style={{ padding: 24, background: "#fff", overflow: "auto", flex: 1, height: "calc(100vh - 64px)", minWidth: 0 }}>
+        <Content
+  style={{
+    padding: "24px 16px 24px 24px", // ✅ 左边稍多，右边稍少
+    background: "#f7f9fb",
+    overflow: "auto",
+    flex: 1,
+    minWidth: 0,
+    display: "flex",
+    justifyContent: "center", // ✅ 内容整体居中
+  }}
+>
+<div style={{ width: "100%", maxWidth: 1200 }}>  {/* ✅ 限定宽度居中 */}
           {!currentProject && (
             <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100%" }}>
               <div style={{ textAlign: "center" }}>
@@ -1224,7 +1285,16 @@ const generateMenuItems = () => [
 	      </Button>
 
               {currentVideoTask.analysisResults && (
-                <Card title="演示统计图表" style={{ marginTop: 24 }}>
+                <Card
+  title="演示统计图表"
+  style={{
+    marginTop: 24,
+    borderRadius: 12,
+    background: "#fff",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+  }}
+>
+
                   <Collapse activeKey={analysisActiveKey} onChange={(key) => setAnalysisActiveKey(key)} expandIcon={({ isActive }) => <CaretRightOutlined rotate={isActive ? 90 : 0} />}>
                     <Panel header="分析结果与数据共享设置" key="1">
                       <Form.Item label="授权共享">
@@ -1363,7 +1433,7 @@ const generateMenuItems = () => [
               </Form.Item>
             </Form>
           </Modal>
-
+	</div>
         </Content>
       </Layout>
     </Layout>
