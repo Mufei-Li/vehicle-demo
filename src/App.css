@@ -73,3 +73,51 @@ body {
 
 
 @import "leaflet/dist/leaflet.css";
+
+/* ===== 通用居中与自适应布局 ===== */
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
+#root {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  background: linear-gradient(135deg, #f0f4ff 0%, #ffffff 100%);
+}
+
+/* 登录页居中容器 */
+.login-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  width: 100%;
+  padding: 16px;
+}
+
+/* 主界面整体自适应 */
+.main-layout {
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  background: #fff;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+  border-radius: 12px;
+}
+
+/* 内容区自适应 */
+.ant-layout-content {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  width: 100%;
+  overflow: auto;
+  padding: 24px;
+  box-sizing: border-box;
+}
