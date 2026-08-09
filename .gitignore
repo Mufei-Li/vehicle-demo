@@ -12,6 +12,23 @@ dist
 dist-ssr
 *.local
 
+# Python virtual environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Runtime data and model artifacts
+backend/users.db
+backend/*.pt
+training/raw_frames/
+training/.cache/
+
+# Environment-specific secrets
+.env
+.env.*
+!.env.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

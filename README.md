@@ -1,12 +1,53 @@
-# React + Vite
+# Vehicle Detection Platform
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This repository records the end-to-end development of a vehicle recognition and analysis platform: interface development, API implementation, data preparation, model training, and experimental results.
 
-Currently, two official plugins are available:
+## Structure
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- `frontend/`: React + Vite client.
+- `backend/`: FastAPI API, authentication, and video-analysis endpoints.
+- `training/scripts/`: frame extraction, training, testing, and report-generation scripts.
+- `training/dataset/`: labelled images and YOLO labels.
+- `training/experiments/`: training configuration, logs, metrics, charts, report, and model checkpoints.
+- `training/weights/`: base YOLO weights used during training.
+- `training/deploy/`: the model weight used by the backend.
+- `docs/`: development and dataset documentation.
 
-## Expanding the ESLint configuration
+Dataset images and model weights are tracked with Git LFS. Clone the project with `git lfs pull` to retrieve them.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Run locally
+
+Frontend:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Backend:
+
+```powershell
+cd backend
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+$env:SECRET_KEY = "replace-with-a-long-random-secret"
+$env:MODEL_WEIGHTS = "..\training\deploy\best.pt"
+uvicorn app:app --reload --port 8000
+```
+
+To run the backend in Docker, use `docker compose up --build` from the repository root.
+
+## Training records
+
+The current experiment is `vehicle_detection_20250823_193130`. See [development log](docs/development-log.md) for a concise record and [dataset notes](docs/dataset.md) for dataset composition.
+
+## Git workflow
+
+```powershell
+git status
+git add .
+git commit -m "Describe the change"
+git push
+```
