@@ -1,5 +1,7 @@
 # Development Log
 
+[中文版本](development-log.zh-CN.md)
+
 ## Vehicle detection experiment — 2025-08-23
 
 - Extracted video frames and prepared a labelled YOLO dataset.

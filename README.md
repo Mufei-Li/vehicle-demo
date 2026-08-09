@@ -2,6 +2,8 @@
 
 This repository records the end-to-end development of a vehicle recognition and analysis platform: interface development, API implementation, data preparation, model training, and experimental results.
 
+[中文版本](README.zh-CN.md) | [Bilingual documentation policy](docs/README.md)
+
 ## Structure
 
 - `frontend/`: React + Vite client.
